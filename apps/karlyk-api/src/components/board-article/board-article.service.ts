@@ -14,13 +14,22 @@ import { lookupAuthMemberLiked, lookupMember, shapeIntoMongoObjectId } from '../
 import { LikeInput } from '../../libs/dto/like/like.input';
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { LikeService } from '../like/like.service';
+import { NotificationGroup, NotificationStatus, NotificationType } from '../../libs/enums/notification.enum';
+import { NotificationInput } from '../../libs/dto/notification/notification.input';
+import { Member } from '../../libs/dto/member/member';
+import { NotificationService } from '../notifications/notification.service';
+import { MemberStatus } from '../../libs/enums/member.enum';
 
 @Injectable()
 export class BoardArticleService {
     constructor(@InjectModel("BoardArticle") private readonly boardArticleModel: Model<BoardArticle>,
+    @InjectModel('Member') private readonly memberModel: Model<Member>,
+
     private readonly memberService: MemberService,
     private readonly viewService: ViewService,
     private readonly likeService: LikeService,
+    private readonly notificationService: NotificationService,
+
 ) {}
 
     public async createBoardArticle(memberId: ObjectId, input: BoardArticleInput): Promise<BoardArticle> {
@@ -131,6 +140,27 @@ export class BoardArticleService {
             likeGroup: LikeGroup.ARTICLE,
             likeRefId: likeRefId,
         };
+
+        //notification
+
+		const authMember: Member = await this.memberModel
+        .findOne({ _id: memberId, memberStatus: MemberStatus.ACTIVE })
+        .exec();
+    if (!authMember) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+
+    const notificInput: NotificationInput = {
+        notificationGroup: NotificationGroup.ARTICLE,
+        notificationType: NotificationType.LIKE,
+        notificationStatus: NotificationStatus.WAIT,
+        notificationTitle: `Liked`,
+        notificationDesc: `${authMember.memberNick} liked your article ${target.articleTitle} `,
+        authorId: memberId,
+        receiverId: target.memberId,
+        articleId: likeRefId,
+    };
+    await this.notificationService.createNotification(notificInput);
+
+    // Like Toggle va Like modules
 
         const modifier: number = await this.likeService.toggleLike(input);
         const result = await this.boardArticleStatsEditor({ _id: likeRefId, targetKey: "articleLikes", modifier: modifier});

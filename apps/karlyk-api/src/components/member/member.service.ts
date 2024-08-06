@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, ObjectId } from 'mongoose';
@@ -10,30 +11,39 @@ import { MemberUpdate } from '../../libs/dto/member/member.update';
 import { ViewService } from '../view/view.service';
 import { ViewInput } from '../../libs/dto/view/view.input';
 import { ViewGroup } from '../../libs/enums/view.enum';
-import { StatisticModifier, T } from '../../libs/types/common';
 import { LikeInput } from '../../libs/dto/like/like.input';
 import { LikeGroup } from '../../libs/enums/like.enum';
 import { LikeService } from '../like/like.service';
 import { Follower, Following, MeFollowed } from '../../libs/dto/follow/follow';
 import { lookupAuthMemberLiked } from '../../libs/config';
+import { NotificationInput } from '../../libs/dto/notification/notification.input';
+import { NotificationGroup, NotificationStatus, NotificationType } from '../../libs/enums/notification.enum';
+import { NotificationService } from '../notifications/notification.service';
+import { StatisticModifier, T } from '../../libs/types/common';
 
 @Injectable()
 export class MemberService {
 	constructor(
 		@InjectModel('Member') private readonly memberModel: Model<Member>,
 		@InjectModel('Follow') private readonly followModel: Model<Follower | Following>,
+
+		//Dependency Injection orqali Instance hosil qilyabmiz
 		private authService: AuthService,
 		private viewService: ViewService,
 		private likeService: LikeService,
+		private notificationService: NotificationService,
 	) {}
 
 	public async signup(input: MemberInput): Promise<Member> {
+		/* Hashing the Password */
 		input.memberPassword = await this.authService.hashPassword(input.memberPassword);
 
+		// try=catch()= ishlatishimizdan sabab mongo db ni errorini ozimizni error standardizmizga otkazsh uchun
 		try {
 			const result = await this.memberModel.create(input);
+
+			/*  Authentication via TOKEN  */
 			result.accessToken = await this.authService.createToken(result);
-			// console.log('accessToken:', accessToken);
 
 			return result;
 		} catch (err) {
@@ -43,31 +53,38 @@ export class MemberService {
 	}
 
 	public async login(input: LoginInput): Promise<Member> {
-		try {
-			const { memberNick, memberPassword } = input;
-			const response: Member = await this.memberModel
-				.findOne({ memberNick: memberNick })
-				.select('+memberPassword')
-				.exec();
+		const { memberNick, memberPassword } = input;
 
-			if (!response || response.memberStatus === MemberStatus.DELETE) {
-				throw new InternalServerErrorException(Message.NO_MEMBER_NICK);
-			} else if (response.memberStatus === MemberStatus.BLOCK) {
-				throw new InternalServerErrorException(Message.BLOCKED_USER);
-			}
+		//console.log('input:', input);
+		//it will printout incoming input value(req.body part)
 
-			const isMatch = await this.authService.comparePasswords(input.memberPassword, response.memberPassword);
-			if (!isMatch) throw new InternalServerErrorException(Message.WRONG_PASSWORD);
-			response.accessToken = await this.authService.createToken(response);
+		const response: Member = await this.memberModel
+			.findOne({ memberNick: memberNick })
+			.select('+memberPassword')
+			.exec();
 
-			return response;
-		} catch (err) {
-			console.log('Error, Service.model:', err);
-			throw new BadRequestException(err);
+		if (!response || response.memberStatus === MemberStatus.DELETE) {
+			throw new InternalServerErrorException(Message.NO_MEMBER_NICK);
+		} else if (response.memberStatus === MemberStatus.BLOCK) {
+			throw new InternalServerErrorException(Message.BLOCKED_USER);
 		}
+
+		/* Password Comparison */
+
+		const isMatch = await this.authService.comparePasswords(input.memberPassword, response.memberPassword);
+		if (!isMatch) throw new InternalServerErrorException(Message.WRONG_PASSWORD);
+
+		response.accessToken = await this.authService.createToken(response);
+
+		return response;
 	}
 
 	public async updateMember(memberId: ObjectId, input: MemberUpdate): Promise<Member> {
+		// console.log('inputId:', input);
+		// console.log('memberID:', memberId);
+
+		//Faqat active memberlar uzini malumotini ozgartirishi uchun permission
+
 		const result: Member = await this.memberModel
 			.findOneAndUpdate(
 				{
@@ -78,57 +95,102 @@ export class MemberService {
 				{ new: true },
 			)
 			.exec();
+		console.log('result:', result);
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 
+		/* Ohirgi ozgargan malumotlar asosida
+		token ni qayta qurib olamiz bunga sabab
+		frontend da biz accessToken ni ichidagi malumotlardan foydalanamiz.
+		*/
 		result.accessToken = await this.authService.createToken(result);
 		return result;
 	}
 
 	public async getMember(memberId: ObjectId, targetId: ObjectId): Promise<Member> {
+		// Faqat Active yoki Block bolgan userlarnigina malumotlarini kora olish imkoniyatini taqdim ettik
 		const search: T = {
 			_id: targetId,
 			memberStatus: {
 				$in: [MemberStatus.ACTIVE, MemberStatus.BLOCK],
 			},
 		};
+
+		// search = POSTMAN da input da kiritilgan memberID
+		//console.log('search:=>', search); // -> later to comment
+
 		const targetMember = await this.memberModel.findOne(search).lean().exec();
-		if (!targetMember) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+
+		// targetMember = POSTMANda kiritilgan memberId orqali topilgan USER ning malumotlari
+		//console.log('targetMember:', targetMember); // -> later to comment
+
+		if (!targetId) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
 		if (memberId) {
 			// record view
-			const viewInput: ViewInput = { memberId: memberId, viewRefId: targetId, viewGroup: ViewGroup.MEMBER };
+			const viewInput: ViewInput = {
+				memberId: memberId,
+				viewRefId: targetId,
+				viewGroup: ViewGroup.MEMBER,
+			};
 			const newView = await this.viewService.recordView(viewInput);
+
+			//console.log('newView:', newView); // -> later to comment
+
+			// memberView increment
 			if (newView) {
-				//increase memberView
+				// $inc: = increment
 				await this.memberModel.findOneAndUpdate(search, { $inc: { memberViews: 1 } }, { new: true }).exec();
+
+				// Clientside ga yangilgan memberViews ni sonini yuboradi agar bomasa ozgarish faqatgina DB da sodir boladi
 				targetMember.memberViews++;
 			}
+
+			// meLiked
+			const likeInput = { memberId: memberId, likeRefId: targetId, likeGroup: LikeGroup.MEMBER };
+			targetMember.meLiked = await this.likeService.checkLikeExistance(likeInput);
+
+			//meFollowed
+			targetMember.meFollowed = await this.checkSubscription(memberId, targetId);
 		}
-
-		// meLiked
-		const likeInput = { memberId: memberId, likeRefId: targetId, likeGroup: LikeGroup.MEMBER };
-		targetMember.meLiked = await this.likeService.checkLikeExistance(likeInput);
-
-		//meFollowed
-		targetMember.meFollowed = await this.checkSubscription(memberId, targetId);
 
 		return targetMember;
 	}
 
 	private async checkSubscription(followerId: ObjectId, followingId: ObjectId): Promise<MeFollowed[]> {
-		const result = await this.followModel.findOne({ followingId: followingId, followerId: followerId }).exec();
+		const result = await this.followModel
+			.findOne({
+				followerId: followerId,
+				followingId: followingId,
+			})
+			.exec();
+
 		return result ? [{ followerId: followerId, followingId: followingId, myFollowing: true }] : [];
 	}
 
 	public async getAgents(memberId: ObjectId, input: AgentsInquiry): Promise<Members> {
 		const { text } = input.search;
-		const match: T = { memberType: MemberType.AGENT, memberStatus: MemberStatus.ACTIVE };
-		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC }; //bu ->
+
+		//console.log('text:::', text);
+
+		const match: T = {
+			memberType: MemberType.AGENT,
+			memberStatus: MemberStatus.ACTIVE,
+		};
+
+		//console.log('match:::', match); //-> to later comment
+
+		const sort: T = {
+			[input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC,
+		};
+		//bu ->
 		// -> shu mantiq bn bir xil korinish bn boladi
 		// const sort: T = { createdAt: -1 };
 
+		//console.log('sort:::', sort); //-> to later comment
+
 		if (text) match.memberNick = { $regex: new RegExp(text, 'i') };
-		console.log('match:', match);
+
+		//console.log('match:::', match); //-> to later comment
 
 		const result = await this.memberModel
 			.aggregate([
@@ -136,20 +198,15 @@ export class MemberService {
 				{ $sort: sort },
 				{
 					$facet: {
-						list: [
-							{ $skip: (input.page - 1) * input.limit },
-							{ $limit: input.limit },
-							//meLiked
-							// lookupAuthMemberLiked(memberId,"$_id") -> "$_id" tushirib qoldirsekham mantiq ishloradi 
-							lookupAuthMemberLiked(memberId),
-						],
+						list: [{ $skip: (input.page - 1) * input.limit }, { $limit: input.limit }, lookupAuthMemberLiked(memberId)],
 						metaCounter: [{ $count: 'total' }],
 					},
 				},
 			])
 			.exec();
 
-		// console.log('result:', result);
+		console.log('result:', result); //-> to later comment
+
 		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
 		return result[0];
@@ -157,6 +214,7 @@ export class MemberService {
 
 	public async likeTargetMember(memberId: ObjectId, likeRefId: ObjectId): Promise<Member> {
 		const target: Member = await this.memberModel.findOne({ _id: likeRefId, memberStatus: MemberStatus.ACTIVE }).exec();
+
 		if (!target) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
 		const input: LikeInput = {
@@ -165,28 +223,47 @@ export class MemberService {
 			likeGroup: LikeGroup.MEMBER,
 		};
 
-		// Like TOGGLE -1 +1 via Like Modules
+		// Like Toggle va Like modules
 		const modifier: number = await this.likeService.toggleLike(input);
-		const result = await this.memberStatsEditor({
-			_id: likeRefId,
-			targetKey: 'memberLikes',
-			modifier,
-		});
+		const result = await this.memberStatsEditor({ _id: likeRefId, targetKey: 'memberLikes', modifier: modifier });
+
+		const authMember: Member = await this.memberModel
+			.findOne({ _id: memberId, memberStatus: MemberStatus.ACTIVE })
+			.exec();
+		if (!authMember) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
+
+		const notificInput: NotificationInput = {
+			notificationType: NotificationType.LIKE,
+			notificationStatus: NotificationStatus.WAIT,
+			notificationGroup: NotificationGroup.MEMBER,
+			notificationTitle: 'New like',
+			notificationDesc: `${authMember.memberNick} liked you`,
+			authorId: memberId,
+			receiverId: target._id,
+		};
+
+		await this.notificationService.createNotification(notificInput);
+
 		if (!result) throw new InternalServerErrorException(Message.SOMETHING_WENT_WRONG);
 		return result;
 	}
 
-	// Authorization: ADMIN
-
 	public async getAllMembersByAdmin(input: MembersInquiry): Promise<Members> {
+		// searching mehanizmi
 		const { memberStatus, memberType, text } = input.search;
 		const match: T = {};
-		const sort: T = { [input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC }; //bu ->
+		const sort: T = {
+			[input?.sort ?? 'createdAt']: input?.direction ?? Direction.DESC,
+		}; //bu ->
 		// -> shu mantiq bn bir xil korinish bn boladi
 		// const sort: T = { createdAt: -1 };
 
 		if (memberStatus) match.memberStatus = memberStatus;
+
+		// console.log('match:', match);
+
 		if (memberType) match.memberType = memberType;
+
 		if (text) match.memberNick = { $regex: new RegExp(text, 'i') };
 		console.log('match:', match);
 
@@ -196,14 +273,14 @@ export class MemberService {
 				{ $sort: sort },
 				{
 					$facet: {
-						list: [{ $skip: (input.page - 1) * input.limit }, { $limit: input.limit }],
+						list: [{ $skip: (input.page - 1) * input.limit }, { $limit: input.limit }], //-> pipeline
 						metaCounter: [{ $count: 'total' }],
 					},
 				},
 			])
 			.exec();
 
-		// console.log('result:', result);
+		//console.log('result:', result);
 		if (!result.length) throw new InternalServerErrorException(Message.NO_DATA_FOUND);
 
 		return result[0];
@@ -211,14 +288,18 @@ export class MemberService {
 
 	public async updateMemberByAdmin(input: MemberUpdate): Promise<Member> {
 		const result: Member = await this.memberModel.findOneAndUpdate({ _id: input._id }, input, { new: true }).exec();
+
+		console.log('input:', input);
+		console.log('input_id:', input._id);
+
 		if (!result) throw new InternalServerErrorException(Message.UPDATE_FAILED);
 		return result;
 	}
 
 	public async memberStatsEditor(input: StatisticModifier): Promise<Member> {
 		console.log('executed');
-
 		const { _id, targetKey, modifier } = input;
+
 		return await this.memberModel.findByIdAndUpdate(_id, { $inc: { [targetKey]: modifier } }, { new: true }).exec();
 	}
 }
