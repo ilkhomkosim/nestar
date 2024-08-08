@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import { PropertyLocation, PropertyStatus, PropertyType } from '../libs/enums/property.enum';
+import { PropertyLocation, PropertySize, PropertyStatus, PropertyType, PropertyVolume } from '../libs/enums/property.enum';
 
 const PropertySchema = new Schema(
 	{
@@ -21,8 +21,15 @@ const PropertySchema = new Schema(
 			required: true,
 		},
 
-		propertyAddress: {
+		PropertySize: {
 			type: String,
+			enum: PropertySize,
+			required: true,
+		},
+
+		PropertyVolume: {
+			type: String,
+			enum: PropertyVolume,
 			required: true,
 		},
 
@@ -32,21 +39,6 @@ const PropertySchema = new Schema(
 		},
 
 		propertyPrice: {
-			type: Number,
-			required: true,
-		},
-
-		propertySquare: {
-			type: Number,
-			required: true,
-		},
-
-		propertyBeds: {
-			type: Number,
-			required: true,
-		},
-
-		propertySizes: {
 			type: Number,
 			required: true,
 		},
@@ -80,16 +72,6 @@ const PropertySchema = new Schema(
 			type: String,
 		},
 
-		propertyBarter: {
-			type: Boolean,
-			default: false,
-		},
-
-		propertyRent: {
-			type: Boolean,
-			default: false,
-		},
-
 		memberId: {
 			type: Schema.Types.ObjectId,
 			required: true,
@@ -104,9 +86,7 @@ const PropertySchema = new Schema(
 			type: Date,
 		},
 
-		constructedAt: {
-			type: Date,
-		},
+	
 	},
 	{ timestamps: true, collection: 'properties' },
 );

@@ -136,31 +136,21 @@ export class PropertyService {
         const {
             memberId,
             locationList,
-            sizesList,
-            bedsList,
+            sizeList,
             typeList,
+            volumeList,
             periodsRange,
             pricesRange,
-            squaresRange,
-            options,
             text,
         } = input.search;
         if(memberId) match.memberId = shapeIntoMongoObjectId(memberId);
         if(locationList && locationList.length) match.propertyLocation = {$in: locationList};
-        if(sizesList && sizesList.length) match.propertySizes = {$in: sizesList};
-        if(bedsList && bedsList.length) match.propertyBeds = {$in: bedsList};
+        if(sizeList && sizeList.length) match.propertySizes = {$in: sizeList};
         if(typeList && typeList.length) match.propertyType = {$in: typeList};
-
+        if(volumeList && volumeList.length) match.propertyVolume = {$in: volumeList};
         if(pricesRange) match.propertyPrice = {$gte: pricesRange.start, $lte: pricesRange.end};
         if(periodsRange) match.createdAt = {$gte: periodsRange.start, $lte: periodsRange.end};
-        if(squaresRange) match.propertySquare = {$gte: squaresRange.start, $lte: squaresRange.end};
-
         if(text) match.propertyTitle = {$regex: new RegExp(text, 'i') };
-        if(options) {
-            match['$or'] = options.map((ele) => {
-                return { [ele]: true};
-            });
-        }
     }
 
     public async getFavorites(memberId: ObjectId, input: OrdinaryInquiry): Promise<Properties> {
@@ -244,12 +234,15 @@ export class PropertyService {
     }
 
     public async getAllPropertiesByAdmin(input: AllPropertiesInquiry): Promise<Properties> {
-        const {propertyStatus, propertyLocationList} = input.search;
+        const {propertyStatus, propertyLocationList, sizeList, volumeList, typeList} = input.search;
         const match: T = {}
         const sort: T = {[input?.sort ?? 'createdAt'] : input?.direction ?? Direction.DESC};
 
         if(propertyStatus) match.propertyStatus = propertyStatus;
         if(propertyLocationList) match.propertyLocation = {$in: propertyLocationList};
+        if(sizeList) match.propertySize = {$in: sizeList};
+        if(volumeList) match.propertyVolume = {$in: volumeList};
+        if(typeList) match.propertyType = {$in: typeList};
 
         const result = await this.propertyModel
         .aggregate([

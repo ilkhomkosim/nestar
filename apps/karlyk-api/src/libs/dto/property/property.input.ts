@@ -1,6 +1,6 @@
 import { Field, InputType, Int } from "@nestjs/graphql";
 import { IsIn, IsInt, IsNotEmpty, IsOptional, Length, Min } from "class-validator";
-import { PropertyLocation, PropertyStatus, PropertyType } from "../../enums/property.enum";
+import { PropertyLocation, PropertySize, PropertyStatus, PropertyType, PropertyVolume } from "../../enums/property.enum";
 import { ObjectId } from "mongoose";
 import { availableOptions, availablePropertySorts } from "../../config";
 import { Direction } from "../../enums/common.enum";
@@ -16,9 +16,12 @@ export class PropertyInput {
     propertyLocation: PropertyLocation;
 
     @IsNotEmpty()
-    @Length(3, 100)
-    @Field(() => String)
-    propertyAddress: string;
+    @Field(() => PropertySize)
+    propertySize: PropertySize;
+
+    @IsNotEmpty()
+    @Field(() => PropertyVolume)
+    propertyVolume: PropertyVolume;
 
     @IsNotEmpty()
     @Length(3, 100)
@@ -30,22 +33,6 @@ export class PropertyInput {
     propertyPrice: number;
 
     @IsNotEmpty()
-    @Field(() => Number)
-    propertySquare: number;
-
-    @IsNotEmpty()
-    @IsInt()
-    @Min(1)
-    @Field(() => Int)
-    propertyBeds: number;
-
-    @IsNotEmpty()
-    @IsInt()
-    @Min(1)
-    @Field(() => Int)
-    propertySizes: number;
-
-    @IsNotEmpty()
     @Field(() => [String])
     propertyImages: string[];
 
@@ -54,19 +41,7 @@ export class PropertyInput {
     @Field(() => String, {nullable:true})
     propertyDesc?: string;
 
-    @IsOptional()
-    @Field(() => Boolean, {nullable:true})
-    propertyBarter?: boolean;
-
-    @IsOptional()
-    @Field(() => Boolean, {nullable:true})
-    propertyRent?: boolean;
-
     memberId?: ObjectId;
-
-    @IsOptional()
-    @Field(() => Date, {nullable: true})
-    constructedAt?: Date;
 }
 
 
@@ -112,17 +87,12 @@ class PISearch{
     typeList?: PropertyType[];
 
     @IsOptional()
-    @Field(() => [Int], {nullable: true})
-    sizesList?: Number[];
+    @Field(() => [PropertySize], {nullable: true})
+    sizeList?: PropertySize[];
 
     @IsOptional()
-    @Field(() => [Int], {nullable: true})
-    bedsList?: Number[];
-
-    @IsOptional()
-    @IsIn(availableOptions, {each: true})
-    @Field(() => [String], {nullable: true})
-    options?: string[];
+    @Field(() => [PropertyVolume], {nullable: true})
+    volumeList?: PropertyVolume[];
 
     @IsOptional()
     @Field(() => PricesRange, {nullable: true})
@@ -131,10 +101,6 @@ class PISearch{
     @IsOptional()
     @Field(() => PeriodsRange, {nullable: true})
     periodsRange?: PeriodsRange;
-
-    @IsOptional()
-    @Field(() => SquaresRange, {nullable: true})
-    squaresRange?: SquaresRange;
 
     @IsOptional()
     @Field(() => String, {nullable: true})
@@ -208,7 +174,19 @@ class PISearch{
 
         @IsOptional()
         @Field(() => [PropertyLocation], {nullable:true})
-        propertyLocationList?: PropertyLocation[];        
+        propertyLocationList?: PropertyLocation[]; 
+
+        @IsOptional()
+        @Field(() => [PropertySize], {nullable:true})
+        sizeList?: PropertySize[]; 
+
+        @IsOptional()
+        @Field(() => [PropertyVolume], {nullable:true})
+        volumeList?: PropertyVolume[];  
+    
+        @IsOptional()
+        @Field(() => [PropertyType], {nullable:true})
+        typeList?: PropertyType[];        
     }
 
     @InputType()

@@ -1,6 +1,6 @@
 import { Field, Int, ObjectType } from "@nestjs/graphql";
 import { ObjectId } from "mongoose";
-import { PropertyLocation, PropertyStatus, PropertyType } from "../../enums/property.enum";
+import { PropertyLocation, PropertySize, PropertyStatus, PropertyType, PropertyVolume } from "../../enums/property.enum";
 import { Member, TotalCounter } from "../member/member";
 import { MeLiked } from "../like/like";
 // serverdan clientga malumotlarni yuboradigan dto decorator
@@ -18,23 +18,17 @@ export class Property{
     @Field(() => PropertyLocation)
     propertyLocation: PropertyLocation;
 
-    @Field(() => String)
-    propertyAddress: string;
+    @Field(() => PropertySize)
+    propertySize: PropertySize;
+
+    @Field(() => PropertyVolume)
+    propertyVolume: PropertyVolume;
 
     @Field(() => String)
     propertyTitle: string;
 
     @Field(() => Number)
     propertyPrice: number;
-
-    @Field(() => Number)
-    propertySquare: number;
-
-    @Field(() => Int)
-    propertyBeds: number;
-
-    @Field(() => Int)
-    propertySizes: number;
 
     @Field(() => Int)
     propertyViews: number;
@@ -54,12 +48,6 @@ export class Property{
     @Field(() => String, {nullable: true})
     propertyDesc?: string[];
 
-    @Field(() => Boolean )
-    propertyBarter: boolean[];
-
-    @Field(() => Boolean )
-    propertyRent: boolean[];
-
     @Field(() => String )
     memberId: ObjectId;
 
@@ -68,9 +56,6 @@ export class Property{
 
     @Field(() => Date, {nullable:true})
     deletedAt?: Date;
-
-    @Field(() => Date, {nullable:true})
-    constructedAt?: Date;
 
     @Field(() => Date)
     createdAt: Date;
